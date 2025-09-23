@@ -22,6 +22,7 @@ class Xvfb:
     display: str = ":99"
     depth: int = 24
     extra_args: Sequence[str] = ()
+    hide_cursor: bool = True
     _proc: subprocess.Popen[bytes] | None = field(default=None, init=False, repr=False)
 
     def start(self) -> None:
@@ -41,6 +42,8 @@ class Xvfb:
         ]
         if self.extra_args:
             cmd.extend(self.extra_args)
+        if self.hide_cursor:
+            cmd.append("-nocursor")
 
         LOGGER.info("Starting Xvfb on %s with %s", self.display, cmd)
         self._proc = subprocess.Popen(  # noqa: S603 - expected invocation of external binary

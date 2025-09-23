@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.serve import http_api
+from app.sender.fcast_adapter import Receiver
 
 
 class _StubXvfb:
@@ -48,11 +49,18 @@ class _StubEncoder:
 
 
 class _StubSender:
-    def play(self, *args, **kwargs) -> None:
+    def play(self, receiver_name, media_url, title=None, *, host=None, port=46899) -> None:
+        assert host == "192.0.2.10"
         return None
 
-    def stop(self, *args, **kwargs) -> None:
+    def stop(self, receiver_name, *, host=None, port=46899) -> None:
         return None
+
+    def discover(self):
+        return [
+            Receiver(name="Living Room", id="abc"),
+            Receiver(name="Kitchen", id="def"),
+        ]
 
 
 def test_api_smoke(tmp_path: Path, monkeypatch):
@@ -80,6 +88,7 @@ def test_api_smoke(tmp_path: Path, monkeypatch):
         json={
             "url": "http://example.com",
             "receiver_name": "Dummy",
+            "receiver_host": "192.0.2.10",
             "width": 1280,
             "height": 720,
             "fps": 15,
@@ -93,6 +102,20 @@ def test_api_smoke(tmp_path: Path, monkeypatch):
     # Status exists
     st = client.get(f"/sessions/{sid}/status")
     assert st.status_code == 200
+    payload = st.json()
+    assert payload["source_url"].rstrip("/") == "http://example.com"
+    assert payload["receiver_name"] == "Dummy"
+    assert payload["receiver_host"] == "192.0.2.10"
+
+    sessions = client.get("/sessions")
+    assert sessions.status_code == 200
+    body = sessions.json()
+    assert any(item["id"] == sid for item in body["sessions"])
+
+    receivers = client.get("/receivers")
+    assert receivers.status_code == 200
+    r_body = receivers.json()
+    assert any(r["name"] == "Living Room" for r in r_body["receivers"])
 
     # Stop
     stop = client.delete(f"/sessions/{sid}")

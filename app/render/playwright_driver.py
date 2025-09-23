@@ -85,13 +85,13 @@ class PlaywrightDriver:
         if user_data_dir:
             self._context = self._playwright.chromium.launch_persistent_context(
                 user_data_dir=str(user_data_dir),
-                headless=True,
+                headless=False,
                 viewport=viewport,
                 args=list(self.browser_args),
             )
         else:
             self._browser = self._playwright.chromium.launch(
-                headless=True,
+                headless=False,
                 args=list(self.browser_args),
             )
             self._context = self._browser.new_context(viewport=viewport)

@@ -40,7 +40,7 @@ def test_xvfb_start_stop(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
     monkeypatch.delenv("DISPLAY", raising=False)
 
-    xvfb = Xvfb(width=800, height=600, display=":88", extra_args=["-foo"])
+    xvfb = Xvfb(width=800, height=600, display=":88", extra_args=["-foo"], hide_cursor=True)
     with xvfb:
         assert os.environ["DISPLAY"] == ":88"
         assert xvfb.is_running is True
@@ -55,7 +55,8 @@ def test_xvfb_start_stop(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cmd[0] == "Xvfb"
     assert cmd[1] == ":88"
     assert "800x600x24" in cmd
-    assert cmd[-1] == "-foo"
+    assert cmd[-2] == "-foo"
+    assert cmd[-1] == "-nocursor"
 
 
 def test_xvfb_start_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -138,6 +138,7 @@ def test_driver_launches_ephemeral_context(tmp_path: Path, fake_sync_playwright:
     assert page.navigations[0][0] == "https://example.test"
     assert page.navigations[0][1] == "networkidle"
     assert fake_sync_playwright.launch_calls
+    assert fake_sync_playwright.launch_calls[0][0] is False
     assert fake_sync_playwright.browser.viewports[0] == {"width": 1280, "height": 720}
     context = driver.context
     assert context.headers == {"X-Test": "1"}
@@ -166,6 +167,7 @@ def test_driver_launches_persistent_context(tmp_path: Path, fake_sync_playwright
     call = fake_sync_playwright.launch_persistent_calls[0]
     assert call[0] == str(profile)
     assert call[2] == {"width": 1024, "height": 768}
+    assert call[1] is False
     assert driver.context.cookies[0]["name"] == "baz"
 
     driver.close()

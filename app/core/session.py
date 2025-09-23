@@ -40,6 +40,8 @@ class Session:
     display: str = ":99"
     source_url: Optional[str] = None
     receiver_name: Optional[str] = None
+    receiver_host: Optional[str] = None
+    receiver_port: Optional[int] = None
 
     def __post_init__(self) -> None:
         # Ensure the session directory exists for downstream components.
@@ -77,6 +79,8 @@ class Session:
             "display": self.display,
             "source_url": self.source_url,
             "receiver_name": self.receiver_name,
+            "receiver_host": self.receiver_host,
+            "receiver_port": self.receiver_port,
         }
 
     @classmethod
@@ -104,6 +108,8 @@ class Session:
             display=payload.get("display", ":99"),
             source_url=payload.get("source_url"),
             receiver_name=payload.get("receiver_name"),
+            receiver_host=payload.get("receiver_host"),
+            receiver_port=payload.get("receiver_port"),
         )
         return session
 

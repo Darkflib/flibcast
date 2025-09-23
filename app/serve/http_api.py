@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, HttpUrl
@@ -29,7 +31,15 @@ SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 HOST_ADDR = os.getenv("HOST_ADDR", "0.0.0.0")
 HOST_PORT = int(os.getenv("HOST_PORT", "8080"))
 
-app = FastAPI()
+@asynccontextmanager
+async def _lifespan(_: FastAPI):
+    try:
+        yield
+    finally:
+        _shutdown_sessions()
+
+
+app = FastAPI(lifespan=_lifespan)
 app.mount("/cast", StaticFiles(directory=str(SESSIONS_DIR), html=False), name="cast")
 
 
@@ -45,6 +55,8 @@ class StartRequest(BaseModel):
     cookies_path: Optional[str] = None
     user_data_dir: Optional[str] = None
     title: Optional[str] = None
+    receiver_host: Optional[str] = None
+    receiver_port: int = 46899
 
 
 class SessionStatus(BaseModel):
@@ -52,6 +64,23 @@ class SessionStatus(BaseModel):
     state: str
     hls_url: Optional[str]
     last_segment_age_ms: Optional[int]
+    source_url: Optional[str] = None
+    receiver_name: Optional[str] = None
+    receiver_host: Optional[str] = None
+    receiver_port: Optional[int] = None
+
+
+class SessionListResponse(BaseModel):
+    sessions: list[SessionStatus]
+
+
+class ReceiverInfo(BaseModel):
+    name: str
+    id: str
+
+
+class ReceiverListResponse(BaseModel):
+    receivers: list[ReceiverInfo]
 
 
 @dataclass(slots=True)
@@ -61,6 +90,8 @@ class SessionRuntime:
     xvfb: Xvfb
     encoder: FfmpegHls
     receiver_name: str
+    receiver_host: Optional[str]
+    receiver_port: int
     stop_event: threading.Event = field(default_factory=threading.Event)
     thread: threading.Thread | None = None
 
@@ -101,6 +132,8 @@ def _orchestrate(runtime: SessionRuntime, req: StartRequest) -> None:
     session = runtime.session
     session.source_url = str(req.url)
     session.receiver_name = req.receiver_name
+    session.receiver_host = req.receiver_host
+    session.receiver_port = req.receiver_port
 
     try:
         LOGGER.info("Session %s starting (display=%s)", session.id, session.display)
@@ -118,7 +151,13 @@ def _orchestrate(runtime: SessionRuntime, req: StartRequest) -> None:
             raise RuntimeError("Timed out waiting for initial HLS output")
 
         media_url = _media_url(session)
-        _sender.play(req.receiver_name, media_url, req.title or "WebCast")
+        _sender.play(
+            req.receiver_name,
+            media_url,
+            req.title or "WebCast",
+            host=req.receiver_host,
+            port=req.receiver_port,
+        )
 
         while not runtime.stop_event.wait(1):
             age = session.freshness_ms()
@@ -142,7 +181,7 @@ def _orchestrate(runtime: SessionRuntime, req: StartRequest) -> None:
             runtime.driver.close()
         with contextlib.suppress(Exception):
             runtime.xvfb.stop()
-        _sender.stop(runtime.receiver_name)
+        _sender.stop(runtime.receiver_name, host=runtime.receiver_host, port=runtime.receiver_port)
         if session.state not in {"error", "stopped"}:
             session.state = "stopped"
         _runtimes.pop(session.id, None)
@@ -164,6 +203,8 @@ def start_session(req: StartRequest) -> SessionStatus:
     session = _sessions.create()
     session.source_url = str(req.url)
     session.receiver_name = req.receiver_name
+    session.receiver_host = req.receiver_host
+    session.receiver_port = req.receiver_port
 
     runtime = SessionRuntime(
         session=session,
@@ -171,6 +212,8 @@ def start_session(req: StartRequest) -> SessionStatus:
         xvfb=Xvfb(width=req.width, height=req.height, display=session.display),
         encoder=FfmpegHls(display=session.display, out_dir=session.dir, profile=_build_profile(req)),
         receiver_name=req.receiver_name,
+        receiver_host=req.receiver_host,
+        receiver_port=req.receiver_port,
     )
     _runtimes[session.id] = runtime
 
@@ -183,6 +226,10 @@ def start_session(req: StartRequest) -> SessionStatus:
         state=session.state,
         hls_url=session.hls_master_url_path,
         last_segment_age_ms=None,
+        source_url=session.source_url,
+        receiver_name=session.receiver_name,
+        receiver_host=session.receiver_host,
+        receiver_port=session.receiver_port,
     )
 
 
@@ -196,6 +243,10 @@ def status(sid: str) -> SessionStatus:
         state=session.state,
         hls_url=session.hls_master_url_path if session.hls_master_path.exists() else None,
         last_segment_age_ms=session.freshness_ms(),
+        source_url=session.source_url,
+        receiver_name=session.receiver_name,
+        receiver_host=session.receiver_host,
+        receiver_port=session.receiver_port,
     )
 
 
@@ -209,7 +260,7 @@ def stop(sid: str) -> dict[str, bool]:
     session.state = "stopping"
     if runtime:
         runtime.request_stop()
-        _sender.stop(runtime.receiver_name)
+        _sender.stop(runtime.receiver_name, host=runtime.receiver_host, port=runtime.receiver_port)
         thread = runtime.thread
         if thread:
             thread.join(timeout=10)
@@ -217,3 +268,54 @@ def stop(sid: str) -> dict[str, bool]:
     _sessions.delete(sid)
     _runtimes.pop(sid, None)
     return {"ok": True}
+
+
+@app.get("/sessions", response_model=SessionListResponse)
+def list_sessions() -> SessionListResponse:
+    items: list[SessionStatus] = []
+    for session in _sessions.all():
+        items.append(
+            SessionStatus(
+                id=session.id,
+                state=session.state,
+                hls_url=session.hls_master_url_path if session.hls_master_path.exists() else None,
+                last_segment_age_ms=session.freshness_ms(),
+                source_url=session.source_url,
+                receiver_name=session.receiver_name,
+                receiver_host=session.receiver_host,
+                receiver_port=session.receiver_port,
+            )
+        )
+    return SessionListResponse(sessions=items)
+
+
+@app.get("/receivers", response_model=ReceiverListResponse)
+def list_receivers() -> ReceiverListResponse:
+    discovered = _sender.discover()
+    receivers = [ReceiverInfo(name=r.name, id=r.id) for r in discovered]
+    return ReceiverListResponse(receivers=receivers)
+
+
+def _shutdown_sessions() -> None:
+    sessions = list(_sessions.all())
+    for session in sessions:
+        runtime = _runtimes.pop(session.id, None)
+        if runtime:
+            runtime.request_stop()
+            thread = runtime.thread
+            if thread and thread.is_alive():
+                thread.join(timeout=10)
+            with contextlib.suppress(Exception):
+                runtime.encoder.stop()
+            with contextlib.suppress(Exception):
+                runtime.driver.close()
+            with contextlib.suppress(Exception):
+                runtime.xvfb.stop()
+        if session.receiver_name:
+            with contextlib.suppress(Exception):
+                _sender.stop(
+                    session.receiver_name,
+                    host=session.receiver_host,
+                    port=session.receiver_port or 46899,
+                )
+        _sessions.delete(session.id)

@@ -16,6 +16,8 @@ app = typer.Typer(add_completion=False, help="Cast a webpage to an FCast receive
 def start(
     url: str = typer.Argument(..., help="Web page URL"),
     receiver: str = typer.Option(..., "--receiver", "-r", help="Receiver name"),
+    receiver_host: str | None = typer.Option(None, help="Receiver host/IP (bypass discovery)"),
+    receiver_port: int = typer.Option(46899, help="Receiver port"),
     width: int = 1920,
     height: int = 1080,
     fps: int = 15,
@@ -27,6 +29,8 @@ def start(
     payload = {
         "url": url,
         "receiver_name": receiver,
+        "receiver_host": receiver_host,
+        "receiver_port": receiver_port,
         "width": width,
         "height": height,
         "fps": fps,
