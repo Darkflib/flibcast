@@ -27,6 +27,8 @@ def test_session_create_and_serialize(tmp_path: Path) -> None:
     assert hydrated.state == session.state
     assert hydrated.dir == session.dir
     assert hydrated.dir.exists()
+    assert hydrated.source_url is None
+    assert hydrated.receiver_name is None
 
 
 def test_session_freshness_reports(tmp_path: Path) -> None:

@@ -24,7 +24,8 @@ def _now_utc() -> datetime:
 def _default_sessions_root() -> Path:
     """Determine the root folder for session artifacts."""
 
-    return Path(os.getenv("SESSIONS_DIR", "/sessions")).expanduser().resolve()
+    default_root = Path.cwd() / "sessions"
+    return Path(os.getenv("SESSIONS_DIR", str(default_root))).expanduser().resolve()
 
 
 @dataclass(slots=True)
@@ -37,6 +38,8 @@ class Session:
     started_at: datetime = field(default_factory=_now_utc)
     last_ok_at: Optional[datetime] = None
     display: str = ":99"
+    source_url: Optional[str] = None
+    receiver_name: Optional[str] = None
 
     def __post_init__(self) -> None:
         # Ensure the session directory exists for downstream components.
@@ -72,6 +75,8 @@ class Session:
             "started_at": self.started_at.isoformat(),
             "last_ok_at": self.last_ok_at.isoformat() if self.last_ok_at else None,
             "display": self.display,
+            "source_url": self.source_url,
+            "receiver_name": self.receiver_name,
         }
 
     @classmethod
@@ -97,6 +102,8 @@ class Session:
             started_at=started_at,
             last_ok_at=last_ok_at,
             display=payload.get("display", ":99"),
+            source_url=payload.get("source_url"),
+            receiver_name=payload.get("receiver_name"),
         )
         return session
 
