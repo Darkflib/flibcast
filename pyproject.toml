@@ -1,0 +1,26 @@
+[project]
+name = "webcast-fcast"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "typer[all]",
+  "pydantic>=2",
+  "playwright",
+  "rich",
+  "fcast-client>=0.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "httpx", "anyio"]
+
+[tool.ruff]
+line-length = 100
+
+[dependency-groups]
+dev = [
+    "black>=25.9.0",
+    "ruff>=0.13.1",
+]
+

@@ -1,0 +1,54 @@
+name: Lint, Test, Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest ruff fastapi uvicorn[standard] typer[all] pydantic rich
+      - name: Ruff
+        run: ruff check .
+
+      - name: Pytest
+        env:
+          SESSIONS_DIR: ${{ github.workspace }}/sessions
+        run: |
+          pytest -q
+
+  buildx:
+    runs-on: ubuntu-22.04
+    needs: lint-test
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build multi-arch (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          tags: local/webcast-fcast:ci
