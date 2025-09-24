@@ -47,9 +47,11 @@ class PlaywrightDriver:
         *,
         browser_args: Sequence[str] | None = None,
         anti_sleep_script: str = DEFAULT_ANTI_SLEEP_SCRIPT,
+        hide_browser_ui: bool = True,
     ) -> None:
         self.browser_args: tuple[str, ...] = tuple(browser_args or DEFAULT_BROWSER_ARGS)
         self.anti_sleep_script = anti_sleep_script
+        self.hide_browser_ui = hide_browser_ui
         self._manager = None
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
@@ -114,6 +116,8 @@ class PlaywrightDriver:
             self._page.add_init_script(self.anti_sleep_script)
         LOGGER.info("Navigating to %s", url)
         self._page.goto(url, wait_until=wait_until, timeout=timeout_ms)
+        if self.hide_browser_ui:
+            self._hide_chrome_ui()
         return self._page
 
     def close(self) -> None:
@@ -191,3 +195,11 @@ class PlaywrightDriver:
                 raise ValueError("Invalid cookie entry")
             cookies.append(dict(entry))
         return cookies
+
+    def _hide_chrome_ui(self) -> None:
+        if not self._page:
+            return
+        try:
+            self._page.keyboard.press("F11")
+        except Error:
+            LOGGER.debug("Failed to toggle fullscreen for browser UI hiding")

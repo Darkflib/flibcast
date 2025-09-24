@@ -57,6 +57,7 @@ class StartRequest(BaseModel):
     title: Optional[str] = None
     receiver_host: Optional[str] = None
     receiver_port: int = 46899
+    hide_browser_ui: bool = True
 
 
 class SessionStatus(BaseModel):
@@ -68,6 +69,9 @@ class SessionStatus(BaseModel):
     receiver_name: Optional[str] = None
     receiver_host: Optional[str] = None
     receiver_port: Optional[int] = None
+    started_at: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
 
 
 class SessionListResponse(BaseModel):
@@ -134,6 +138,8 @@ def _orchestrate(runtime: SessionRuntime, req: StartRequest) -> None:
     session.receiver_name = req.receiver_name
     session.receiver_host = req.receiver_host
     session.receiver_port = req.receiver_port
+    session.width = req.width
+    session.height = req.height
 
     try:
         LOGGER.info("Session %s starting (display=%s)", session.id, session.display)
@@ -208,7 +214,7 @@ def start_session(req: StartRequest) -> SessionStatus:
 
     runtime = SessionRuntime(
         session=session,
-        driver=PlaywrightDriver(),
+        driver=PlaywrightDriver(hide_browser_ui=req.hide_browser_ui),
         xvfb=Xvfb(width=req.width, height=req.height, display=session.display),
         encoder=FfmpegHls(display=session.display, out_dir=session.dir, profile=_build_profile(req)),
         receiver_name=req.receiver_name,
@@ -230,6 +236,9 @@ def start_session(req: StartRequest) -> SessionStatus:
         receiver_name=session.receiver_name,
         receiver_host=session.receiver_host,
         receiver_port=session.receiver_port,
+        started_at=session.started_at.isoformat(),
+        width=session.width,
+        height=session.height,
     )
 
 
@@ -247,6 +256,9 @@ def status(sid: str) -> SessionStatus:
         receiver_name=session.receiver_name,
         receiver_host=session.receiver_host,
         receiver_port=session.receiver_port,
+        started_at=session.started_at.isoformat(),
+        width=session.width,
+        height=session.height,
     )
 
 
@@ -284,6 +296,9 @@ def list_sessions() -> SessionListResponse:
                 receiver_name=session.receiver_name,
                 receiver_host=session.receiver_host,
                 receiver_port=session.receiver_port,
+                started_at=session.started_at.isoformat(),
+                width=session.width,
+                height=session.height,
             )
         )
     return SessionListResponse(sessions=items)

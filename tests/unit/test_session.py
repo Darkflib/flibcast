@@ -31,6 +31,8 @@ def test_session_create_and_serialize(tmp_path: Path) -> None:
     assert hydrated.receiver_name is None
     assert hydrated.receiver_host is None
     assert hydrated.receiver_port is None
+    assert hydrated.width is None
+    assert hydrated.height is None
 
 
 def test_session_freshness_reports(tmp_path: Path) -> None:

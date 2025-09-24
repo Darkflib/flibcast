@@ -42,6 +42,8 @@ class Session:
     receiver_name: Optional[str] = None
     receiver_host: Optional[str] = None
     receiver_port: Optional[int] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
 
     def __post_init__(self) -> None:
         # Ensure the session directory exists for downstream components.
@@ -81,6 +83,8 @@ class Session:
             "receiver_name": self.receiver_name,
             "receiver_host": self.receiver_host,
             "receiver_port": self.receiver_port,
+            "width": self.width,
+            "height": self.height,
         }
 
     @classmethod
@@ -110,6 +114,8 @@ class Session:
             receiver_name=payload.get("receiver_name"),
             receiver_host=payload.get("receiver_host"),
             receiver_port=payload.get("receiver_port"),
+            width=payload.get("width"),
+            height=payload.get("height"),
         )
         return session
 

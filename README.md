@@ -60,6 +60,7 @@ curl -X POST http://localhost:8080/sessions \
         "receiver_name": "Living Room",
         "receiver_host": "192.168.16.237",
         "receiver_port": 46899,
+        "hide_browser_ui": true,
         "width": 1920,
         "height": 1080,
         "fps": 15,
@@ -73,7 +74,8 @@ curl -X POST http://localhost:8080/sessions \
 # Start a new session (uses API env var for base URL)
 uv run python app/cli.py start https://example.com \
   --receiver "Living Room" \
-  --receiver-host 192.168.16.237
+  --receiver-host 192.168.16.237 \
+  --hide-browser-ui
 
 # Inspect status
 uv run python app/cli.py status <session-id>
@@ -83,6 +85,8 @@ uv run python app/cli.py stop <session-id>
 ```
 
 Cookies can be supplied via `--cookies path/to/cookies.json`; the file should contain a Playwright-compatible cookie list.
+
+Use `--show-browser-ui` if you need to debug the page with Chromium chrome visible; otherwise the driver sends an `F11` toggle to keep the capture window fullscreen.
 
 ## Receiver discovery
 
@@ -120,7 +124,9 @@ Sessions transition through a small state machine:
 | `stopped` | Runtime has been torn down and directories cleaned |
 | `error` | The pipeline failed (stale HLS, missing binaries, etc.) |
 
-Use the status endpoint or CLI command to poll `last_segment_age_ms`; values below ~8000 ms indicate the playlist is still live. When you delete a session (API or CLI) the runtime stops FFmpeg, closes the browser, signals Xvfb, tells the receiver to stop, and finally removes the session directory. Deleting an already-failed session is safe—the cleanup routines are idempotent.
+Use the status endpoint or CLI command to poll `last_segment_age_ms`; values below ~8000 ms indicate the playlist is still live. Each session record includes `started_at`, `width`, and `height` so you can differentiate runs when quickly switching pages.
+
+When you delete a session (API or CLI) the runtime stops FFmpeg, closes the browser, signals Xvfb, tells the receiver to stop, and finally removes the session directory. Deleting an already-failed session is safe—the cleanup routines are idempotent.
 
 **Manual cleanup:** If the process hosting the API is interrupted, call `python -c "from app.core.session import SessionManager; SessionManager().all()"` to see any orphaned sessions and delete the corresponding directories.
 

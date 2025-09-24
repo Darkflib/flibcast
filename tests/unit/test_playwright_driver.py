@@ -13,6 +13,16 @@ class FakePage:
         self.init_scripts: list[str] = []
         self.navigations: list[tuple[str, str, int]] = []
         self.closed = False
+        self.key_presses: list[str] = []
+
+        class Keyboard:
+            def __init__(self, page: "FakePage") -> None:
+                self._page = page
+
+            def press(self, key: str) -> None:
+                self._page.key_presses.append(key)
+
+        self.keyboard = Keyboard(self)
 
     def add_init_script(self, script: str) -> None:
         self.init_scripts.append(script)
@@ -144,6 +154,7 @@ def test_driver_launches_ephemeral_context(tmp_path: Path, fake_sync_playwright:
     assert context.headers == {"X-Test": "1"}
     assert context.cookies[0]["name"] == "foo"
     assert context.pages[0].init_scripts[0] == DEFAULT_ANTI_SLEEP_SCRIPT
+    assert page.key_presses == ["F11"]
 
     driver.close()
     assert driver.is_running is False
@@ -169,6 +180,7 @@ def test_driver_launches_persistent_context(tmp_path: Path, fake_sync_playwright
     assert call[2] == {"width": 1024, "height": 768}
     assert call[1] is False
     assert driver.context.cookies[0]["name"] == "baz"
+    assert page.key_presses == ["F11"]
 
     driver.close()
     assert fake_sync_playwright.context.closed is True

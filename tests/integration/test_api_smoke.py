@@ -20,6 +20,9 @@ class _StubXvfb:
 
 
 class _StubPlaywrightDriver:
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
     def launch(self, *args, **kwargs) -> None:
         return None
 
@@ -106,11 +109,14 @@ def test_api_smoke(tmp_path: Path, monkeypatch):
     assert payload["source_url"].rstrip("/") == "http://example.com"
     assert payload["receiver_name"] == "Dummy"
     assert payload["receiver_host"] == "192.0.2.10"
+    assert payload["width"] == 1280
+    assert payload["height"] == 720
+    assert "started_at" in payload
 
     sessions = client.get("/sessions")
     assert sessions.status_code == 200
     body = sessions.json()
-    assert any(item["id"] == sid for item in body["sessions"])
+    assert any(item["id"] == sid and item["width"] == 1280 for item in body["sessions"])
 
     receivers = client.get("/receivers")
     assert receivers.status_code == 200
