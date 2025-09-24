@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from pathlib import Path
@@ -84,17 +85,22 @@ class PlaywrightDriver:
         self._playwright = self._manager.start()
 
         viewport = {"width": width, "height": height}
+        args = list(self.browser_args)
+        if self.hide_browser_ui:
+            for extra in ("--start-fullscreen", "--kiosk"):
+                if extra not in args:
+                    args.append(extra)
         if user_data_dir:
             self._context = self._playwright.chromium.launch_persistent_context(
                 user_data_dir=str(user_data_dir),
                 headless=False,
                 viewport=viewport,
-                args=list(self.browser_args),
+                args=args,
             )
         else:
             self._browser = self._playwright.chromium.launch(
                 headless=False,
-                args=list(self.browser_args),
+                args=args,
             )
             self._context = self._browser.new_context(viewport=viewport)
 
@@ -117,6 +123,9 @@ class PlaywrightDriver:
         LOGGER.info("Navigating to %s", url)
         self._page.goto(url, wait_until=wait_until, timeout=timeout_ms)
         if self.hide_browser_ui:
+            with contextlib.suppress(Exception):
+                self._page.bring_to_front()
+                self._page.wait_for_timeout(100)
             self._hide_chrome_ui()
         return self._page
 
@@ -199,6 +208,20 @@ class PlaywrightDriver:
     def _hide_chrome_ui(self) -> None:
         if not self._page:
             return
+        try:
+            if self._context and hasattr(self._context, "new_cdp_session"):
+                session = self._context.new_cdp_session(self._page)
+                window_info = session.send("Browser.getWindowForTarget", {})
+                window_id = window_info.get("windowId") if isinstance(window_info, dict) else None
+                if window_id is not None:
+                    session.send(
+                        "Browser.setWindowBounds",
+                        {"windowId": window_id, "bounds": {"windowState": "fullscreen"}},
+                    )
+                    return
+        except Exception:  # pragma: no cover - depends on playwright backend
+            LOGGER.debug("Failed to request fullscreen via CDP", exc_info=True)
+
         try:
             self._page.keyboard.press("F11")
         except Error:

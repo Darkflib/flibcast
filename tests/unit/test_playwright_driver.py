@@ -24,6 +24,12 @@ class FakePage:
 
         self.keyboard = Keyboard(self)
 
+    def bring_to_front(self) -> None:
+        return
+
+    def wait_for_timeout(self, _: int) -> None:
+        return
+
     def add_init_script(self, script: str) -> None:
         self.init_scripts.append(script)
 
@@ -41,6 +47,8 @@ class FakeContext:
         self.pages: list[FakePage] = []
         self.closed = False
         self.viewport = None
+        self.cdp_commands: list[tuple[str, dict[str, object]]] = []
+        self.cdp_should_fail = False
 
     def set_extra_http_headers(self, headers: dict[str, str]) -> None:
         self.headers = headers
@@ -52,6 +60,11 @@ class FakeContext:
         page = FakePage()
         self.pages.append(page)
         return page
+
+    def new_cdp_session(self, _: FakePage) -> "FakeCdpSession":
+        if self.cdp_should_fail:
+            raise RuntimeError("CDP unavailable")
+        return FakeCdpSession(self)
 
     def close(self) -> None:
         self.closed = True
@@ -119,6 +132,18 @@ class FakeManager:
         self.playwright.stop()
 
 
+class FakeCdpSession:
+    def __init__(self, context: FakeContext) -> None:
+        self._context = context
+
+    def send(self, method: str, params: dict[str, object] | None = None) -> dict[str, object] | None:
+        payload = params or {}
+        self._context.cdp_commands.append((method, payload))
+        if method == "Browser.getWindowForTarget":
+            return {"windowId": 1}
+        return None
+
+
 @pytest.fixture
 def fake_sync_playwright(monkeypatch: pytest.MonkeyPatch) -> FakeChromium:
     chromium = FakeChromium()
@@ -154,7 +179,9 @@ def test_driver_launches_ephemeral_context(tmp_path: Path, fake_sync_playwright:
     assert context.headers == {"X-Test": "1"}
     assert context.cookies[0]["name"] == "foo"
     assert context.pages[0].init_scripts[0] == DEFAULT_ANTI_SLEEP_SCRIPT
-    assert page.key_presses == ["F11"]
+    assert context.cdp_commands[0][0] == "Browser.getWindowForTarget"
+    assert context.cdp_commands[1][0] == "Browser.setWindowBounds"
+    assert page.key_presses == []
 
     driver.close()
     assert driver.is_running is False
@@ -180,10 +207,26 @@ def test_driver_launches_persistent_context(tmp_path: Path, fake_sync_playwright
     assert call[2] == {"width": 1024, "height": 768}
     assert call[1] is False
     assert driver.context.cookies[0]["name"] == "baz"
-    assert page.key_presses == ["F11"]
+    assert driver.context.cdp_commands[0][0] == "Browser.getWindowForTarget"
+    assert driver.context.cdp_commands[1][0] == "Browser.setWindowBounds"
+    assert page.key_presses == []
 
     driver.close()
     assert fake_sync_playwright.context.closed is True
+
+
+def test_driver_falls_back_to_f11_when_cdp_fails(fake_sync_playwright: FakeChromium) -> None:
+    fake_sync_playwright.context.cdp_should_fail = True
+    driver = PlaywrightDriver()
+    page = driver.launch(
+        "https://example.test",
+        width=1280,
+        height=720,
+    )
+
+    assert page.key_presses == ["F11"]
+
+    driver.close()
 
 
 def test_driver_rejects_duplicate_cookie_sources(fake_sync_playwright: FakeChromium) -> None:
