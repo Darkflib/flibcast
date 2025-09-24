@@ -106,6 +106,7 @@ class SessionRuntime:
 _sessions = SessionManager(root=SESSIONS_DIR)
 _sender = Sender()
 _runtimes: dict[str, SessionRuntime] = {}
+_receiver_sessions: dict[str, str] = {}
 
 
 @app.get("/healthz")
@@ -116,6 +117,23 @@ def healthz() -> dict[str, bool]:
 def _media_url(session: Session) -> str:
     host = os.getenv("FC_HOSTNAME_OVERRIDE", HOST_ADDR)
     return f"http://{host}:{HOST_PORT}{session.hls_master_url_path}"
+
+
+def _stop_receiver_if_active(
+    receiver_name: Optional[str],
+    session_id: str,
+    *,
+    host: Optional[str],
+    port: Optional[int],
+) -> None:
+    if not receiver_name:
+        return
+    if _receiver_sessions.get(receiver_name) != session_id:
+        return
+
+    stop_port = port if port is not None else 46899
+    _sender.stop(receiver_name, host=host, port=stop_port)
+    _receiver_sessions.pop(receiver_name, None)
 
 
 def _await_initial_playlist(session: Session, runtime: SessionRuntime, timeout: float = 15.0) -> bool:
@@ -157,13 +175,14 @@ def _orchestrate(runtime: SessionRuntime, req: StartRequest) -> None:
             raise RuntimeError("Timed out waiting for initial HLS output")
 
         media_url = _media_url(session)
-        _sender.play(
+        if _sender.play(
             req.receiver_name,
             media_url,
             req.title or "WebCast",
             host=req.receiver_host,
             port=req.receiver_port,
-        )
+        ):
+            _receiver_sessions[req.receiver_name] = session.id
 
         while not runtime.stop_event.wait(1):
             age = session.freshness_ms()
@@ -187,7 +206,12 @@ def _orchestrate(runtime: SessionRuntime, req: StartRequest) -> None:
             runtime.driver.close()
         with contextlib.suppress(Exception):
             runtime.xvfb.stop()
-        _sender.stop(runtime.receiver_name, host=runtime.receiver_host, port=runtime.receiver_port)
+        _stop_receiver_if_active(
+            runtime.receiver_name,
+            session.id,
+            host=runtime.receiver_host,
+            port=runtime.receiver_port,
+        )
         if session.state not in {"error", "stopped"}:
             session.state = "stopped"
         _runtimes.pop(session.id, None)
@@ -272,13 +296,25 @@ def stop(sid: str) -> dict[str, bool]:
     session.state = "stopping"
     if runtime:
         runtime.request_stop()
-        _sender.stop(runtime.receiver_name, host=runtime.receiver_host, port=runtime.receiver_port)
+        _stop_receiver_if_active(
+            runtime.receiver_name,
+            session.id,
+            host=runtime.receiver_host,
+            port=runtime.receiver_port,
+        )
         thread = runtime.thread
         if thread:
             thread.join(timeout=10)
 
     _sessions.delete(sid)
     _runtimes.pop(sid, None)
+    if session.receiver_name:
+        _stop_receiver_if_active(
+            session.receiver_name,
+            session.id,
+            host=session.receiver_host,
+            port=session.receiver_port,
+        )
     return {"ok": True}
 
 
@@ -328,9 +364,10 @@ def _shutdown_sessions() -> None:
                 runtime.xvfb.stop()
         if session.receiver_name:
             with contextlib.suppress(Exception):
-                _sender.stop(
+                _stop_receiver_if_active(
                     session.receiver_name,
+                    session.id,
                     host=session.receiver_host,
-                    port=session.receiver_port or 46899,
+                    port=session.receiver_port,
                 )
         _sessions.delete(session.id)

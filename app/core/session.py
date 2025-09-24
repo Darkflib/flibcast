@@ -184,15 +184,24 @@ class SessionFreshness:
 class SessionManager:
     """In-memory registry for active sessions."""
 
-    def __init__(self, root: Optional[Path] = None) -> None:
+    def __init__(self, root: Optional[Path] = None, display_base: int = 99) -> None:
         self.root = (root or _default_sessions_root()).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self._sessions: dict[str, Session] = {}
+        self._display_base = display_base
+
+    def _allocate_display(self) -> str:
+        used = {session.display for session in self._sessions.values()}
+        display_num = self._display_base
+        while f":{display_num}" in used:
+            display_num += 1
+        return f":{display_num}"
 
     def create(self) -> Session:
         sid = uuid.uuid4().hex
         session_dir = self.root / sid
-        session = Session(id=sid, dir=session_dir)
+        display = self._allocate_display()
+        session = Session(id=sid, dir=session_dir, display=display)
         self._sessions[sid] = session
         return session
 
